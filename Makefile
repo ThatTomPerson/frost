@@ -5,6 +5,7 @@ PKGS = $(shell $(GO) list -f '{{.Dir}}' ./...)
 SRC = $(addsuffix /*.go,$(PKGS))
 
 run: $(FUNCTION_NAME)
+	rm -rf tests/vendor
 	cd tests; ../$<
 
 $(FUNCTION_NAME): $(SRC)

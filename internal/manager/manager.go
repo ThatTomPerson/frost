@@ -1,83 +1,75 @@
 package manager
 
 import (
-	"context"
-	"runtime"
 	"sync"
 
 	"github.com/apex/log"
+	"github.com/vbauerster/mpb"
+	"ttp.sh/frost/internal/project"
+	"ttp.sh/frost/internal/semver"
 )
 
-type Job func(context.Context) error
 type Handler interface {
 	Name() string
-	Detect(string) bool
-	Exec(context.Context, string, chan Job) error
-	PostExec(context.Context, string) error
+	Enabled() bool
+	// Install(*mpb.Progress)
+	GetModuleList(project.Project) []Module
 }
 
-var handlers []Handler
-
-func AddHandler(h Handler) {
-	handlers = append(handlers, h)
+type Module interface {
+	// Install from cache, if it is not in cache then Download first
+	Install(project.Project)
+	// Download the module into a package that can be installed to a location or cache
+	Download() Package
+	Name() string
+	Version() *semver.Version
 }
 
-func logError(h Handler, err error) {
-	if err != nil {
-		log.Errorf("%s: %v", h.Name(), err)
+//
+type Package interface {
+	WriteTo(string) error
+}
+
+type Manager struct {
+	root     string
+	handlers []Handler
+}
+
+func (m *Manager) Add(h Handler) {
+	m.handlers = append(m.handlers, h)
+}
+
+func New(root string) *Manager {
+	return &Manager{root: root}
+}
+
+func (m *Manager) GetEnabledHandlers() (enabled []Handler) {
+	for _, h := range m.handlers {
+		log.Infof("%s is %v", h.Name(), h.Enabled())
+		if h.Enabled() {
+			enabled = append(enabled, h)
+		}
 	}
+
+	return enabled
 }
 
-func Run(root string) {
-	workers := runtime.NumCPU() * 4
+func (m *Manager) Run() error {
+	handlers := m.GetEnabledHandlers()
 
-	c := make(chan Job, workers*2)
-	wrokerWg := &sync.WaitGroup{}
-	wrokerWg.Add(workers)
+	wg := new(sync.WaitGroup)
+	wg.Add(len(handlers))
 
-	for i := 0; i < workers; i++ {
-		go worker(c, wrokerWg)
-	}
-
-	handlersWg := &sync.WaitGroup{}
+	pb := mpb.New(mpb.WithWaitGroup(wg))
 
 	for _, h := range handlers {
-		if h.Detect(root) {
-			handlersWg.Add(1)
-			go func(h Handler) {
-				log.Infof("running %s handler", h.Name())
-				logError(h, h.Exec(context.Background(), root, c))
-				log.Infof("done %s handler", h.Name())
-				handlersWg.Done()
-			}(h)
-		}
-	}
-	handlersWg.Wait()
-	close(c)
-	wrokerWg.Wait()
-
-	handlersWg = &sync.WaitGroup{}
-	for _, h := range handlers {
-		if h.Detect(root) {
-			handlersWg.Add(1)
-			go func(h Handler) {
-				logError(h, h.PostExec(context.Background(), root))
-				handlersWg.Done()
-			}(h)
-		}
+		go func(h Handler) {
+			h.GetModuleList()
+			wg.Done()
+		}(h)
 	}
 
-	handlersWg.Wait()
+	pb.Wait()
 
-}
-
-func worker(c chan Job, wg *sync.WaitGroup) {
-	for job := range c {
-		err := job(context.Background())
-		if err != nil {
-			log.Error(err.Error())
-		}
-	}
-
-	wg.Done()
+	return nil
 }
