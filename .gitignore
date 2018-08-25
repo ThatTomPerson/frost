@@ -1,2 +1,4 @@
 tests/vendor
 tests/node_modules
+.vscode
+frost
