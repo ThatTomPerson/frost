@@ -1,10 +1,9 @@
 {
-    "version": "0.0.0",
-    "scripts": {
-      "major": "npm version major",
-      "minor": "npm version minor",
-      "patch": "npm version patch",
-      "postversion": "goreleaser --rm-dist; git push; git push --tags"
-    }
+  "version": "0.0.1",
+  "scripts": {
+    "major": "npm version major",
+    "minor": "npm version minor",
+    "patch": "npm version patch",
+    "postversion": "goreleaser --rm-dist; git push; git push --tags"
   }
-  
+}
