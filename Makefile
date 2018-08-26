@@ -13,3 +13,6 @@ $(FUNCTION_NAME): $(SRC)
 
 test:
 	@$(go) test ./...
+
+release:
+	goreleaser
