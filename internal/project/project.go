@@ -15,14 +15,14 @@ func AddHandler(h PackageHandler) {
 	handlers = append(handlers, h)
 }
 
-type Module interface {
-	Install(*Project)
-	GetHandler() PackageHandler
-}
-
 type Project struct {
 	root     string
 	Handlers []PackageHandler
+}
+
+func (p *Project) GetFile(f string) *os.File {
+	file, _ := os.Open(path.Join(p.root, f))
+	return file
 }
 
 func (p *Project) detectPackageHandlers() {
