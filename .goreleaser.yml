@@ -1,5 +1,12 @@
 project_name: frost
 
+release:
+  # Repo in which the release will be created.
+  # Default is extracted from the origin remote URL.
+  github:
+    owner: ThatTomPerson
+    name: frost
+
 build:
   main: main.go
   binary: frost
