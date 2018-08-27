@@ -1,9 +1,22 @@
 package composer
 
 import (
+	"archive/zip"
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"os/exec"
+	"path"
+	"strings"
 	"time"
 
+	"github.com/apex/log"
 	"ttp.sh/frost/internal/project"
+	"ttp.sh/frost/internal/semver"
 )
 
 type Module struct {
@@ -50,11 +63,115 @@ type Lock struct {
 	PackagesDev []Module `json:"packages-dev"`
 }
 
-func (m *Module) Install(p *project.Project) {
-	
-}
+// func (m *Module) Install(p *project.Project) {
 
+// }
 
 func (Module) GetHandler() project.PackageHandler {
 	return DefaultHandler
+}
+
+func (h *Module) Install(pkg Module, root string) (Module, error) {
+	var err error
+	ctx := context.Background()
+	switch pkg.Dist.Type {
+	case "zip":
+		err = h.InstallZip(ctx, root, pkg)
+		pkg.InstallationSource = "dist"
+	default:
+		err = fmt.Errorf("No dist install")
+	}
+
+	if err != nil {
+		switch pkg.Source.Type {
+		case "git":
+			err = h.InstallGit(ctx, root, pkg)
+		}
+		pkg.InstallationSource = "source"
+	}
+
+	if err != nil {
+		return pkg, fmt.Errorf("Can't install package %s", pkg.Name)
+	}
+
+	v, _ := semver.NewVersion(pkg.Version)
+	pkg.VersionNormalized = v.String()
+
+	return pkg, nil
+}
+
+func (h *Module) InstallGit(ctx context.Context, root string, pkg Module) error {
+	p := path.Join(root, "vendor", pkg.Name)
+	_, err := os.Stat(p)
+	if err != nil {
+		clone := exec.Command("git", "clone", pkg.Source.URL, p)
+		// clone.Stderr = os.Stderr
+		// clone.Stdin = os.Stdin
+		// clone.Stdout = os.Stdout
+		clone.Run()
+	}
+
+	co := exec.Command("git", "checkout", pkg.Source.Reference)
+	co.Dir = p
+	// co.Stderr = os.Stderr
+	// co.Stdin = os.Stdin
+	// co.Stdout = os.Stdout
+	co.Run()
+
+	return nil
+}
+
+func (h *Module) InstallZip(ctx context.Context, root string, pkg Module) error {
+	r, err := http.Get(pkg.Dist.URL)
+	if err != nil {
+		return fmt.Errorf("%s: %s: %v", h.Name(), pkg.Name, err)
+	}
+
+	defer r.Body.Close()
+
+	// ReadAll reads from readCloser until EOF and returns the data as a []byte
+	b, err := ioutil.ReadAll(r.Body) // The readCloser is the one from the zip-package
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	// bytes.Reader implements io.Reader, io.ReaderAt, etc. All you need!
+	readerAt := bytes.NewReader(b)
+
+	z, err := zip.NewReader(readerAt, int64(len(b)))
+	if err != nil {
+		return fmt.Errorf("%s: %s: %v", h.Name(), pkg.Name, err)
+	}
+
+	for _, f := range z.File {
+		parts := strings.Split(f.Name, "/")
+		name := strings.Join(parts[1:], "/")
+		p := path.Join(root, "vendor", pkg.Name, name)
+
+		if f.FileInfo().IsDir() {
+			err := os.MkdirAll(p, os.ModePerm)
+			if err != nil {
+				log.Errorf("%v", err)
+			}
+		} else {
+			out, err := os.Create(p)
+			if err != nil {
+				log.Errorf("%v", err)
+			}
+			reader, err := f.Open()
+			if err != nil {
+				log.Errorf("%v", err)
+			}
+			_, err = io.Copy(out, reader)
+			if err != nil {
+				log.Errorf("%v", err)
+			}
+			err = reader.Close()
+			if err != nil {
+				log.Errorf("%v", err)
+			}
+		}
+	}
+
+	return nil
 }
