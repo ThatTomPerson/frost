@@ -23,6 +23,11 @@ To reduce CI Build times, it uses an efficent cache and is highly concurent
 ```
 brew tap thattomperson/tap
 brew install frost
+```
+
+### Linux
+```
+curl https://ttp.sh/frost/install | bash
 
 ## Why Frost
 idk, it never updates state so it is cold?, I'm not good at names
